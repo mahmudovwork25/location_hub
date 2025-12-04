@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:location_hub/ui/widgets/current_location_card.dart';
@@ -31,12 +33,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _initializeApp() async {
     print('🎬 [INIT] Initializing app UI...');
+    try {
+      // Add timeout to prevent hanging indefinitely
+      await Future.any([
+        _performInitialization(),
+        Future.delayed(const Duration(seconds: 5), () => throw TimeoutException('Initialization timed out')),
+      ]);
+    } catch (e) {
+      print('❌ [INIT] Initialization error: $e');
+    } finally {
+      // Always show UI, even if init failed partially
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+      print('✅ [INIT] App UI initialization completed (success or fallback)');
+    }
+  }
+
+  Future<void> _performInitialization() async {
     await PermissionsHelper.checkAndRequestPermissions();
     await _checkServiceState();
-    setState(() {
-      _isInitialized = true;
-    });
-    print('✅ [INIT] App UI initialized');
   }
 
   Future<void> _checkServiceState() async {

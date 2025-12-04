@@ -10,8 +10,8 @@ class CurrentLocationCard extends StatelessWidget {
       child: StreamBuilder<Map<String, dynamic>?>(
         stream: FlutterBackgroundService().on('update'),
         builder: (context, snapshot) {
-          final lat = snapshot.data?['lat'] ?? 0.0;
-          final lng = snapshot.data?['lng'] ?? 0.0;
+          final lat = (snapshot.data?['lat'] as num?)?.toDouble() ?? 0.0;
+          final lng = (snapshot.data?['lng'] as num?)?.toDouble() ?? 0.0;
           final isConnected = snapshot.data?['isConnected'] ?? false;
           final connectionState =
               snapshot.data?['connectionState'] ?? 'Disconnected';
