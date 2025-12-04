@@ -12,16 +12,22 @@ import 'package:signalr_netcore/hub_connection.dart';
 import 'package:signalr_netcore/hub_connection_builder.dart';
 
 void main() async {
+  print('🚀 [MAIN] App starting...');
   WidgetsFlutterBinding.ensureInitialized();
+  print('✅ [MAIN] Flutter binding initialized');
 
   // Initialize the background service
+  print('⚙️ [MAIN] Initializing background service...');
   await initializeService();
+  print('✅ [MAIN] Background service initialized');
 
+  print('🎨 [MAIN] Starting app UI...');
   runApp(const DeliveryTrackerApp());
 }
 
 // 1. Background Service Configuration
 Future<void> initializeService() async {
+  print('📱 [SERVICE] Initializing FlutterBackgroundService...');
   final service = FlutterBackgroundService();
 
   // Notification channel for Android (required for foreground service)
@@ -31,15 +37,22 @@ Future<void> initializeService() async {
     description: 'Running in background to track location',
     importance: Importance.low,
   );
+  print('🔔 [SERVICE] Created notification channel: delivery_tracking_channel');
 
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
 
   if (Platform.isIOS || Platform.isAndroid) {
-    await flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
+    print('📱 [SERVICE] Platform: ${Platform.isAndroid ? "Android" : "iOS"}');
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(channel);
+    print('✅ [SERVICE] Notification channel registered');
   }
 
+  print('⚙️ [SERVICE] Configuring service...');
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart, // The function that runs in the background
@@ -56,6 +69,7 @@ Future<void> initializeService() async {
       onBackground: onIosBackground,
     ),
   );
+  print('✅ [SERVICE] Service configured successfully');
 }
 
 // iOS background handler (must be global/static)
@@ -66,32 +80,48 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
 // Required for notification update inside the isolate
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-FlutterLocalNotificationsPlugin();
+    FlutterLocalNotificationsPlugin();
 
 // 2. The Background Logic (Runs in a separate Isolate)
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
+  print('\n🟢 [BACKGROUND] ====== BACKGROUND SERVICE STARTED ======');
+  print('[BACKGROUND] Initializing plugins...');
   DartPluginRegistrant.ensureInitialized();
+  print('✅ [BACKGROUND] Plugins initialized');
 
   // 1. Setup SignalR
+  print('🔌 [SIGNALR] Setting up SignalR connection...');
+  print('[SIGNALR] Server URL: http://10.100.104.128:5084/hubs/location');
   final hubConnection = HubConnectionBuilder()
       .withUrl("http://10.100.104.128:5084/hubs/location")
       .withAutomaticReconnect()
       .build();
+  print('✅ [SIGNALR] HubConnection built with auto-reconnect');
 
   Future<void> ensureConnection() async {
+    print('[SIGNALR] Checking connection state: ${hubConnection.state}');
     if (hubConnection.state != HubConnectionState.Connected) {
       try {
+        print('⏳ [SIGNALR] Attempting to connect...');
         await hubConnection.start();
-        print("SignalR Connected ID: ${hubConnection.connectionId}");
+        print(
+          "✅ [SIGNALR] Connected! Connection ID: ${hubConnection.connectionId}",
+        );
       } catch (e) {
-        print("SignalR Connection Error: $e");
+        print("❌ [SIGNALR] Connection Error: $e");
       }
+    } else {
+      print(
+        '✅ [SIGNALR] Already connected (ID: ${hubConnection.connectionId})',
+      );
     }
   }
 
   service.on('stopService').listen((event) {
+    print('🛑 [BACKGROUND] Stop service command received');
     service.stopSelf();
+    print('✅ [BACKGROUND] Service stopped');
   });
 
   // 2. Helper to format date exactly like: 2025-12-04 15:21:21.706+05
@@ -111,42 +141,61 @@ void onStart(ServiceInstance service) async {
   }
 
   // 3. Start Loop (Set to 5 minutes for production)
+  print('⏰ [BACKGROUND] Starting periodic timer (5 minutes interval)...');
+  int loopCount = 0;
   Timer.periodic(const Duration(minutes: 5), (timer) async {
+    loopCount++;
+    print(
+      '\n🔄 [LOOP #$loopCount] ====== Timer tick at ${DateTime.now()} ======',
+    );
     if (service is AndroidServiceInstance) {
+      print('[LOOP #$loopCount] Running on Android');
       if (await service.isForegroundService()) {
+        print('[LOOP #$loopCount] Service is in foreground mode');
         try {
           // A. Get Geo Location
+          print('📍 [LOCATION] Requesting current position...');
           Position position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
           );
+          print(
+            '✅ [LOCATION] Got position: Lat=${position.latitude}, Lng=${position.longitude}, Speed=${position.speed}m/s, Accuracy=${position.accuracy}m',
+          );
 
           // B. Construct Payload
-          // Note: userId is Integer (2), but lat/long/speed are Strings per your JSON request.
+          print('📦 [PAYLOAD] Constructing data payload...');
+          final timestamp = getFormattedTime();
           final locationData = {
-            "timestamp": getFormattedTime(),
+            "timestamp": timestamp,
             "latitude": position.latitude.toString(),
             "longitude": position.longitude.toString(),
             "speed": position.speed.toString(),
-            "accuracy": position.accuracy.toString()
+            "accuracy": position.accuracy.toString(),
           };
+          print('[PAYLOAD] Location data: $locationData');
 
           final payload = {
             "userId": 2, // Static ID
-            "locations": [locationData] // List containing the object
+            "locations": [locationData], // List containing the object
           };
+          print('📦 [PAYLOAD] Complete payload ready for userId: 2');
 
           // C. Send to Server
+          print('🔌 [SIGNALR] Ensuring connection before send...');
           await ensureConnection();
 
           if (hubConnection.state == HubConnectionState.Connected) {
-            print("Sending: $payload");
+            print('📤 [SIGNALR] Sending payload to server...');
+            print('[SIGNALR] Payload: $payload');
 
             // "SendLocations" is the C# Method Name
             // args expects a List of arguments. Since your method takes 1 object,
             // we wrap 'payload' in a list: [payload]
             await hubConnection.invoke("SendLocations", args: [payload]);
+            print('✅ [SIGNALR] Data sent successfully!');
 
             // Update Notification
+            print('🔔 [NOTIFICATION] Updating notification...');
             flutterLocalNotificationsPlugin.show(
               888,
               'Delivery Tracker',
@@ -160,23 +209,33 @@ void onStart(ServiceInstance service) async {
                 ),
               ),
             );
+            print('✅ [NOTIFICATION] Notification displayed');
+          } else {
+            print(
+              '❌ [SIGNALR] Cannot send - not connected! State: ${hubConnection.state}',
+            );
           }
 
           // Send data to UI
+          print('📱 [UI] Sending update to UI...');
           service.invoke('update', {
             "lat": position.latitude,
             "lng": position.longitude,
             "time": getFormattedTime(),
           });
-
+          print('✅ [UI] UI updated');
         } catch (e) {
-          print("Error in background loop: $e");
+          print("❌ [ERROR] Error in background loop: $e");
+          print('[ERROR] Stack trace: ${StackTrace.current}');
         }
+      } else {
+        print('⚠️ [LOOP #$loopCount] Service is not in foreground mode');
       }
+    } else {
+      print('⚠️ [LOOP #$loopCount] Not running on Android');
     }
   });
 }
-
 
 class DeliveryTrackerApp extends StatefulWidget {
   const DeliveryTrackerApp({super.key});
@@ -197,10 +256,22 @@ class _DeliveryTrackerAppState extends State<DeliveryTrackerApp> {
   }
 
   Future<void> _checkPermissions() async {
+    print('\n🔐 [PERMISSIONS] Checking permissions...');
+
     // Request location permissions
-    await Permission.location.request();
-    await Permission.locationAlways.request(); // Crucial for background
-    await Permission.notification.request();
+    print('[PERMISSIONS] Requesting location permission...');
+    final locationStatus = await Permission.location.request();
+    print('[PERMISSIONS] Location permission: $locationStatus');
+
+    print('[PERMISSIONS] Requesting background location permission...');
+    final backgroundStatus = await Permission.locationAlways.request();
+    print('[PERMISSIONS] Background location permission: $backgroundStatus');
+
+    print('[PERMISSIONS] Requesting notification permission...');
+    final notificationStatus = await Permission.notification.request();
+    print('[PERMISSIONS] Notification permission: $notificationStatus');
+
+    print('✅ [PERMISSIONS] Permission check complete\n');
   }
 
   @override
@@ -213,9 +284,9 @@ class _DeliveryTrackerAppState extends State<DeliveryTrackerApp> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                  Icons.delivery_dining,
-                  size: 100,
-                  color: isRunning ? Colors.green : Colors.grey
+                Icons.delivery_dining,
+                size: 100,
+                color: isRunning ? Colors.green : Colors.grey,
               ),
               const SizedBox(height: 20),
               Text("Status: $status", style: const TextStyle(fontSize: 18)),
@@ -241,23 +312,36 @@ class _DeliveryTrackerAppState extends State<DeliveryTrackerApp> {
                 children: [
                   ElevatedButton(
                     onPressed: () async {
+                      print('\n🔘 [UI] Toggle button pressed');
                       final service = FlutterBackgroundService();
                       var isRunning = await service.isRunning();
+                      print('[UI] Service running status: $isRunning');
+
                       if (isRunning) {
+                        print('[UI] Stopping service...');
                         service.invoke("stopService");
+                        print('✅ [UI] Stop command sent');
                       } else {
+                        print('[UI] Starting service...');
                         service.startService();
+                        print('✅ [UI] Service started');
                       }
                       setState(() {});
                     },
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15)
+                      backgroundColor: Colors.blue,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
+                      ),
                     ),
-                    child: const Text("Toggle Service", style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      "Toggle Service",
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
