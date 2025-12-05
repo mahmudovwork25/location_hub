@@ -125,7 +125,7 @@ void onStart(ServiceInstance service) async {
           // A. Get Geo Location
           print('📍 [LOCATION] Requesting current position...');
           Position position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high,
+            desiredAccuracy: LocationAccuracy.bestForNavigation,
           );
           lastLat = position.latitude;
           lastLng = position.longitude;

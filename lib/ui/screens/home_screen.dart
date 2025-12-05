@@ -120,19 +120,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
               // Status Badge
               const StatusBadge(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
               // Locations Sent Card
               const LocationCounterCard(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               // Current Location Card
               const CurrentLocationCard(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               // Toggle Button
               ToggleButton(
