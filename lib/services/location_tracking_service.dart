@@ -9,8 +9,7 @@ import 'package:location_hub/services/storage_service.dart';
 import 'package:location_hub/utils/date_formatter.dart';
 
 // Required for notification update inside the isolate
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
@@ -23,9 +22,7 @@ void onStart(ServiceInstance service) async {
   final storageService = StorageService();
   await storageService.initialize();
 
-  final signalRService = SignalRService(
-    serverUrl: "http://10.100.104.128:5084/hubs/location",
-  );
+  final signalRService = SignalRService(serverUrl: "http://10.100.104.128:5084/hubs/location");
 
   int locationsSent = 0;
   int locationsCached = storageService.cachedCount;
@@ -50,9 +47,7 @@ void onStart(ServiceInstance service) async {
       "lat": lastLat,
       "lng": lastLng,
       "isConnected": signalRService.isConnected,
-      "connectionState": signalRService.isConnected
-          ? "Connected"
-          : "Disconnected",
+      "connectionState": signalRService.isConnected ? "Connected" : "Disconnected",
       "locationsSent": locationsSent,
       "locationsCached": locationsCached,
       "isRunning": true,
@@ -61,13 +56,7 @@ void onStart(ServiceInstance service) async {
 
   service.on('stopService').listen((event) {
     print('🛑 [BACKGROUND] Stop service command received');
-    service.invoke('update', {
-      "isRunning": false,
-      "isConnected": false,
-      "connectionState": "Stopped",
-      "lat": 0.0,
-      "lng": 0.0,
-    });
+    service.invoke('update', {"isRunning": false, "isConnected": false, "connectionState": "Stopped", "lat": 0.0, "lng": 0.0});
     service.stopSelf();
     print('✅ [BACKGROUND] Service stopped');
   });
@@ -76,9 +65,7 @@ void onStart(ServiceInstance service) async {
   Future<void> syncCachedLocations() async {
     if (!storageService.hasCachedLocations) return;
 
-    print(
-      '🔄 [SYNC] Syncing ${storageService.cachedCount} cached locations...',
-    );
+    print('🔄 [SYNC] Syncing ${storageService.cachedCount} cached locations...');
 
     final List<dynamic> cachedData = storageService.allCachedLocations;
 
@@ -115,9 +102,7 @@ void onStart(ServiceInstance service) async {
   int loopCount = 0;
   Timer.periodic(const Duration(seconds: 10), (timer) async {
     loopCount++;
-    print(
-      '\n🔄 [LOOP #$loopCount] ====== Timer tick at ${DateTime.now()} ======',
-    );
+    print('\n🔄 [LOOP #$loopCount] ====== Timer tick at ${DateTime.now()} ======');
 
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
@@ -126,7 +111,22 @@ void onStart(ServiceInstance service) async {
           print('📍 [LOCATION] Requesting current position...');
           Position position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: const Duration(seconds: 5),
           );
+          // Accuracy check if it high then 15m ignore it
+          if (position.accuracy > 15.0) {
+            print('⚠️ [FILTER] Ignored point. Accuracy too low: ${position.accuracy}m');
+            return; // Skip the rest of the loop, don't save, don't send.
+          }
+
+          // Ignore if speed is near 0 (stops "jitter" when standing still)
+          if (position.speed < 0.5) {
+            print('⚠️ [FILTER] Ignored point. Not moving.');
+            return; // Uncomment to enable
+          }
+
+          print('✅ [VALID] Lat: ${position.latitude}, Lng: ${position.longitude}');
+
           lastLat = position.latitude;
           lastLng = position.longitude;
 
@@ -207,9 +207,7 @@ void onStart(ServiceInstance service) async {
             "accuracy": position.accuracy,
             "time": timestamp,
             "isConnected": signalRService.isConnected,
-            "connectionState": signalRService.isConnected
-                ? "Connected"
-                : "Disconnected",
+            "connectionState": signalRService.isConnected ? "Connected" : "Disconnected",
             "locationsSent": locationsSent,
             "locationsCached": locationsCached,
             "isRunning": true,
